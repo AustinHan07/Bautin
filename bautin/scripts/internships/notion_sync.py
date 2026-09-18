@@ -364,6 +364,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     g.add_argument("--push", metavar="RESULT_JSON")
     g.add_argument("--push-queued", action="store_true")
     g.add_argument("--skip", nargs="+", metavar="QID", help="mark these queue ids Skipped in Notion (note: skipped by Austin)")
+    g.add_argument("--applied", nargs="+", metavar="QID", help="mark these queue ids Applied in Notion (applied by Austin by hand)")
     args = ap.parse_args(argv)
     root = vault_root(args.vault)
     cfg = load_cfg(root)
@@ -373,6 +374,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(json.dumps({"pulled": out["count"], "by_status": out["by_status"]}))
         elif args.push:
             print(json.dumps(push_result(root, cfg, Path(args.push))))
+        elif args.applied:
+            out = []
+            today = date.today().isoformat()
+            for qid in args.applied:
+                row = queue_row(root, qid) or {}
+                if not row:
+                    out.append({"id": qid, "error": "not in queue"}); continue
+                row["posted"] = row.get("found")
+                out.append({"id": qid, **upsert(cfg, row, cfg["status_applied"], today, f"Applied by Austin by hand, {today}", tok)})
+            refresh_counter(cfg, tok)
+            print(json.dumps(out))
         elif args.skip:
             out = []
             for qid in args.skip:
