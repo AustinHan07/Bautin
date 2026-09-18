@@ -44,8 +44,7 @@ def _lane() -> str:
 
 def _allowed_user_ids() -> set[str]:
     try:
-        from agent.secret_scope import get_secret
-        raw = get_secret("TELEGRAM_ALLOWED_USERS", "") or ""
+        raw = _rules.read_secret("TELEGRAM_ALLOWED_USERS")
     except Exception:  # pragma: no cover
         raw = ""
     return {x.strip() for x in raw.split(",") if x.strip()}

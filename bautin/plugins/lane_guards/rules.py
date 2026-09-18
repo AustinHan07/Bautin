@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,35 @@ def marker_valid(marker: object, key: str) -> bool:
         return False
     sig = marker.get("sig")
     return isinstance(sig, str) and hmac.compare_digest(sig, marker_sig(marker, key))
+
+
+def read_secret(name: str) -> str:
+    """Host-side secret: Hermes's scope/env first, else $HERMES_HOME/.env. Never runs inside the sandbox."""
+    try:
+        from agent.secret_scope import get_secret
+        val = get_secret(name, "") or ""
+        if val:
+            return val
+    except Exception:
+        pass
+    try:
+        try:
+            from hermes_constants import get_hermes_home
+            home = Path(get_hermes_home())
+        except Exception:
+            home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+        env = home / ".env"
+        if env.exists():
+            for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                if k.strip() == name:
+                    return v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
 
 
 class LaneRules:
@@ -296,34 +326,8 @@ class InternshipsRules(LaneRules):
         return out
 
     def secret(self, name: str) -> str:
-        """Read a secret through Hermes's scope when available, else from $HERMES_HOME/.env (host side only). Overridable in tests."""
-        try:
-            from agent.secret_scope import get_secret
-            val = get_secret(name, "") or ""
-            if val:
-                return val
-        except Exception:
-            pass
-        try:
-            try:
-                from hermes_constants import get_hermes_home
-                home = Path(get_hermes_home())
-            except Exception:
-                import os
-                home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
-            env = home / ".env"
-            if not env.exists():
-                return ""
-            for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
-                line = line.strip()
-                if line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                if k.strip() == name:
-                    return v.strip().strip('"').strip("'")
-        except OSError:
-            pass
-        return ""
+        """Host-side secret lookup (see read_secret). Overridable in tests."""
+        return read_secret(name)
 
     # ── flag unverified claims in drafts ─────────────────────────────────────
     def after_tool(self, tool_name: str, args: dict, result: str) -> Optional[str]:
