@@ -26,8 +26,8 @@ Date: Thu, 18 Sep 2026 20:00:00 +0000
 Content-Type: text/html; charset=utf-8
 
 <html><head><style>.x{font-family:'Courier New',monospace}</style></head><body><p>2 new jobs</p>
-<p><a href="http://url4016.emploive.com/ls/click?upn=AAA">Software Engineering Intern (Winter 2027) &#8599;</a></p><p>Gemini · New York City, New York, United States</p>
-<p><a href="http://url4016.emploive.com/ls/click?upn=BBB">Software Engineering Intern ↗</a></p><p>Fable Security · San Francisco, California, United States</p>
+<p><a href="http://url4016.emploive.com/ls/click?upn=AAA">Software Engineering Intern (Winter 2027) &#8599;</a></p><p>Gemini &middot; New York City, New York, United States</p>
+<p><a href="http://url4016.emploive.com/ls/click?upn=BBB">Software Engineering Intern &#8599;</a></p><p>Fable Security &middot; San Francisco, California, United States</p>
 <p><a href="http://url4016.emploive.com/ls/click?upn=CCC">Open trackers</a> <a href="http://url4016.emploive.com/ls/click?upn=DDD">Pause alerts</a></p></body></html>
 """
 
