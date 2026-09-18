@@ -15,6 +15,7 @@ science); found within max_age_days; not Applied/Skipped in Notion; no existing 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -25,6 +26,34 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from discover import load_filters, parse_frontmatter, role_ok, vault_root  # noqa: E402
 from notion_sync import done_index, norm_key, norm_url  # noqa: E402
+
+# Markers are signed with the same host-only key the Telegram guard uses (plugins/lane_guards/rules.py),
+# so the guard accepts them and rejects anything the model writes itself.
+_spec = importlib.util.spec_from_file_location(
+    "bautin_lane_rules", Path(__file__).resolve().parents[2] / "plugins" / "lane_guards" / "rules.py")
+_rules = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_rules)
+sign_marker, marker_valid = _rules.sign_marker, _rules.marker_valid
+
+
+def approval_key() -> str:
+    """BAUTIN_APPROVAL_KEY or TELEGRAM_BOT_TOKEN from the environment, else from $HERMES_HOME/.env (host side only)."""
+    names = ("BAUTIN_APPROVAL_KEY", "TELEGRAM_BOT_TOKEN")
+    for n in names:
+        if os.environ.get(n, "").strip():
+            return os.environ[n].strip()
+    env = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / ".env"
+    found = {}
+    if env.exists():
+        for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            found[k.strip()] = v.strip().strip('"').strip("'")
+    for n in names:
+        if found.get(n):
+            return found[n]
+    return ""
 
 
 def queue_rows(root: Path) -> list[dict]:
@@ -79,13 +108,19 @@ def decide(root: Path, cfg: dict, today: date) -> dict:
     return out
 
 
-def write_markers(root: Path, rows: list[dict]) -> list[str]:
+def write_markers(root: Path, rows: list[dict], key: str) -> list[str]:
+    """Write signed markers; with no key nothing is written (the guard could not verify them)."""
+    if not key:
+        print("auto_approve: no signing key (TELEGRAM_BOT_TOKEN or BAUTIN_APPROVAL_KEY); markers not written", file=sys.stderr)
+        return []
     approvals = root / "state" / "internships" / "approvals"
+    approvals.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     ids = []
     for r in rows:
-        (approvals / f"{r['id']}.json").write_text(json.dumps({"id": r["id"], "url": r["url"], "company": r["company"], "role": r["role"],
-                                                              "approved_at": now, "by": "rules", "message": "auto_apply rules"}, indent=1) + "\n", encoding="utf-8")
+        marker = sign_marker({"id": r["id"], "url": r["url"], "company": r["company"], "role": r["role"],
+                              "approved_at": now, "by": "rules", "message": "auto_apply rules"}, key)
+        (approvals / f"{r['id']}.json").write_text(json.dumps(marker, indent=1) + "\n", encoding="utf-8")
         ids.append(r["id"])
     log = root / "log" / "internships"; log.mkdir(parents=True, exist_ok=True)
     with (log / "approvals.log").open("a", encoding="utf-8") as fh:
@@ -103,8 +138,12 @@ def main(argv=None) -> int:
     cfg.update({k: v for k, v in parse_frontmatter((root / "state" / "internships" / "filters.md").read_text(encoding="utf-8")).items()
                 if k in ("auto_apply", "auto_apply_daily_cap")}) if (root / "state" / "internships" / "filters.md").exists() else None
     d = decide(root, cfg, date.today())
-    written = write_markers(root, d["approve"]) if (d["auto_apply"] and not args.dry_run) else []
-    print(json.dumps({"auto_apply": d["auto_apply"], "would_approve": [r["id"] for r in d["approve"]], "approved": written, "held": d["hold"][:20]}))
+    key = approval_key()
+    written = write_markers(root, d["approve"], key) if (d["auto_apply"] and not args.dry_run) else []
+    out = {"auto_apply": d["auto_apply"], "would_approve": [r["id"] for r in d["approve"]], "approved": written, "held": d["hold"][:20]}
+    if d["auto_apply"] and not key:
+        out["error"] = "no signing key; markers not written"
+    print(json.dumps(out))
     return 0
 
 

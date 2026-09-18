@@ -39,11 +39,17 @@ class AutoApproveTests(unittest.TestCase):
     def test_daily_cap_and_markers(self):
         d = aa.decide(self.v, dict(self.cfg, auto_apply_daily_cap=1), date.today())
         self.assertEqual([r["id"] for r in d["approve"]], ["q1"]); self.assertIn("daily cap", {h["id"]: h["why"] for h in d["hold"]}["q6"])
-        ids = aa.write_markers(self.v, d["approve"])
+        ids = aa.write_markers(self.v, d["approve"], "test-bot-token")
         m = json.loads((self.v / "state" / "internships" / "approvals" / "q1.json").read_text())
         self.assertEqual((ids, m["by"], m["company"]), (["q1"], "rules", "Robinhood"))
+        self.assertTrue(aa.marker_valid(m, "test-bot-token")); self.assertFalse(aa.marker_valid(m, "other"))
         d2 = aa.decide(self.v, dict(self.cfg, auto_apply_daily_cap=1), date.today())
         self.assertEqual(d2["approve"], [])           # q1 already has a marker; cap reached for today
+
+    def test_no_key_writes_nothing(self):
+        d = aa.decide(self.v, self.cfg, date.today())
+        self.assertEqual(aa.write_markers(self.v, d["approve"], ""), [])
+        self.assertFalse((self.v / "state" / "internships" / "approvals" / "q1.json").exists())
 
     def test_off_by_default_reports_only(self):
         cfg = dict(self.cfg, auto_apply=False)

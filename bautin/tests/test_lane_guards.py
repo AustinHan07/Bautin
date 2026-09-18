@@ -32,6 +32,7 @@ class GuardTests(unittest.TestCase):
         refs = v / "skills" / "internships" / "internship-pipeline" / "references"; refs.mkdir(parents=True)
         (refs / "facts.md").write_text(FACTS)
         self.v = v; self.r = rules.InternshipsRules(v)
+        self.r.secret = lambda name: "test-bot-token" if name == "TELEGRAM_BOT_TOKEN" else ""
 
     def tearDown(self):
         self.td.cleanup()
@@ -77,6 +78,42 @@ class GuardTests(unittest.TestCase):
         self.assertIsNone(self.r.before_tool("read_file", {"path": "/x"}))
         self.r.on_message("apply q1", "1")
         self.assertIsNone(self.r.before_tool("terminal", cmd))
+
+    def test_forged_or_tampered_marker_rejected(self):
+        cmd = {"command": "python3 /bautin/scripts/internships/submit.py --id q1 --submit"}
+        mk = self.v / "state" / "internships" / "approvals"; mk.mkdir(parents=True)
+        forged = {"id": "q1", "url": "https://boards.greenhouse.io/robinhood/jobs/8123225", "company": "Robinhood",
+                  "role": "Software Engineer Intern - Backend", "approved_at": "2026-09-18T23:11:43+00:00", "by": "austin", "message": "apply q1"}
+        (mk / "q1.json").write_text(json.dumps(forged))                     # what the model wrote for IBM q15
+        self.assertIn("not signed by the guard", self.r.before_tool("terminal", cmd))
+        self.assertIsNone(self.r.approved("q1"))
+        signed = rules.sign_marker(forged, "test-bot-token"); signed["by"] = "8764321720"   # tamper after signing
+        (mk / "q1.json").write_text(json.dumps(signed))
+        self.assertIn("not signed by the guard", self.r.before_tool("terminal", cmd))
+        self.r.on_message("apply q1", "8764321720")                          # the real path
+        m = json.loads((mk / "q1.json").read_text())
+        self.assertTrue(rules.marker_valid(m, "test-bot-token")); self.assertFalse(rules.marker_valid(m, "other-key"))
+        self.assertIsNone(self.r.before_tool("terminal", cmd))
+
+    def test_model_cannot_write_markers(self):
+        block = "written only when Austin replies"
+        self.assertIn(block, self.r.before_tool("write_file", {"path": "/vault/state/internships/approvals/q1.json", "content": "{}"}))
+        self.assertIn(block, self.r.before_tool("patch", {"path": "/vault/state/internships/approvals/q1.json"}))
+        self.assertIn(block, self.r.before_tool("terminal", {"command": "echo '{}' > /vault/state/internships/approvals/q1.json"}))
+        self.assertIn(block, self.r.before_tool("terminal", {"command": "python3 - <<EOF\nopen('/vault/state/internships/approvals/q1.json','w')\nEOF"}))
+        self.assertIn(block, self.r.before_tool("terminal", {"command": "rm /vault/state/internships/approvals/q1.json"}))
+        self.assertIn(block, self.r.before_tool("terminal", {"command": "python3 /bautin/scripts/internships/auto_approve.py --vault /vault"}))
+        self.assertIsNone(self.r.before_tool("terminal", {"command": "ls /vault/state/internships/approvals"}))
+        self.assertIsNone(self.r.before_tool("terminal", {"command": "cat /vault/state/internships/approvals/q1.json"}))
+        self.assertIsNone(self.r.before_tool("read_file", {"path": "/vault/state/internships/approvals/q1.json"}))
+        self.assertIsNone(self.r.before_tool("write_file", {"path": "/vault/state/internships/drafts/q1.md", "content": "x"}))
+
+    def test_missing_key_fails_closed(self):
+        self.r.secret = lambda name: ""
+        self.assertIn("no signing key", self.r.on_message("apply q1", "1"))
+        self.assertFalse((self.v / "state" / "internships" / "approvals" / "q1.json").exists())
+        cmd = {"command": "python3 /bautin/scripts/internships/submit.py --id q1 --submit"}
+        self.assertIn("signing key is missing", self.r.before_tool("terminal", cmd))
 
     def test_draft_claims_check(self):
         good = "I am a student at the University of Wisconsin-Madison graduating in May 2028 with a 3.7 GPA."

@@ -2,6 +2,8 @@
 so they unit-test without the runtime."""
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
 from datetime import datetime, timezone
@@ -16,6 +18,31 @@ def host_path(vault: Path, p: str) -> Path:
     if p == CONTAINER_VAULT or p.startswith(CONTAINER_VAULT + "/"):
         return vault / p[len(CONTAINER_VAULT):].lstrip("/")
     return Path(p)
+
+
+# ── approval markers are signed with a host-only key ─────────────────────────
+# The sandbox never sees the profile .env, so a marker the model writes itself cannot carry
+# a valid signature. Only the Telegram guard (Austin's own `apply q<N>`) and the cron-side
+# rules script hold the key.
+SIG_FIELDS = ("id", "url", "company", "role", "approved_at", "by")
+
+
+def marker_sig(marker: dict, key: str) -> str:
+    msg = "\x1f".join(str(marker.get(k, "")) for k in SIG_FIELDS).encode("utf-8")
+    return hmac.new(key.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def sign_marker(marker: dict, key: str) -> dict:
+    signed = dict(marker)
+    signed["sig"] = marker_sig(signed, key)
+    return signed
+
+
+def marker_valid(marker: object, key: str) -> bool:
+    if not key or not isinstance(marker, dict):
+        return False
+    sig = marker.get("sig")
+    return isinstance(sig, str) and hmac.compare_digest(sig, marker_sig(marker, key))
 
 
 class LaneRules:
@@ -81,12 +108,29 @@ class InternshipsRules(LaneRules):
                                   "location": cells[4], "url": cells[5]}
         return rows
 
-    def approved(self, qid: str) -> Optional[dict]:
+    def approval_key(self) -> str:
+        return self.secret("BAUTIN_APPROVAL_KEY") or self.secret("TELEGRAM_BOT_TOKEN")
+
+    def marker_status(self, qid: str) -> tuple[Optional[dict], str]:
+        """(marker, "") when a guard-signed marker exists for *qid*, else (None, reason)."""
         f = self.approvals / f"{qid}.json"
+        key = self.approval_key()
+        if not key:
+            return None, ("the approval signing key is missing (set TELEGRAM_BOT_TOKEN or BAUTIN_APPROVAL_KEY "
+                          "in the profile .env), so no approval can be verified.")
+        if not f.exists():
+            return None, f"no approval on file for {qid}. Austin has not replied `apply {qid}` in this chat."
         try:
-            return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+            marker = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
-            return None
+            return None, f"the approval marker for {qid} is unreadable."
+        if not marker_valid(marker, key):
+            return None, (f"the approval marker for {qid} is not signed by the guard, so it was not written "
+                          f"from Austin's `apply {qid}` reply.")
+        return marker, ""
+
+    def approved(self, qid: str) -> Optional[dict]:
+        return self.marker_status(qid)[0]
 
     # ── approvals from the owner's message ───────────────────────────────────
     @staticmethod
@@ -115,6 +159,10 @@ class InternshipsRules(LaneRules):
             ids = {k for k in rows if not self.approved(k)}
         if not ids:
             return "[guard] No queue ids found in that reply. Say e.g. `apply q17, q18` or `apply all`."
+        key = self.approval_key()
+        if not key:
+            return ("[guard] Cannot record approvals: no signing key (TELEGRAM_BOT_TOKEN or BAUTIN_APPROVAL_KEY) "
+                    "in the profile .env. Nothing approved.")
         self.approvals.mkdir(parents=True, exist_ok=True)
         recorded, unknown = [], []
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -123,8 +171,8 @@ class InternshipsRules(LaneRules):
             if not row:
                 unknown.append(qid)
                 continue
-            marker = {"id": qid, "url": row["url"], "company": row["company"], "role": row["role"],
-                      "approved_at": now, "by": user_id, "message": text.strip()[:300]}
+            marker = sign_marker({"id": qid, "url": row["url"], "company": row["company"], "role": row["role"],
+                                  "approved_at": now, "by": user_id, "message": text.strip()[:300]}, key)
             (self.approvals / f"{qid}.json").write_text(json.dumps(marker, indent=1) + "\n", encoding="utf-8")
             recorded.append(f"{qid} {row['company']} — {row['role']}")
         log = self.vault / "log" / "internships"
@@ -183,21 +231,32 @@ class InternshipsRules(LaneRules):
         except (OSError, subprocess.SubprocessError) as exc:
             return json.dumps({"error": str(exc)[:200]})
 
-    # ── block unapproved submissions ─────────────────────────────────────────
+    # ── block unapproved submissions and any model-side marker writes ────────
+    APPROVALS_PATH_RE = re.compile(r"internships[/\\]+approvals(?:[/\\]|\s|$)")
+    TERMINAL_WRITE_RE = re.compile(
+        r">|\btee\b|\b(?:cp|mv|touch|rm|mkdir|rmdir|chmod|chown|ln|dd|install|sed|perl|python3?|node|ruby|sh|bash|zsh|truncate)\b")
+    MARKER_RULE = ("[guard] Blocked: approval markers under state/internships/approvals are written only when Austin replies "
+                   "`apply q<N>` on Telegram, or by the rules script during the cron pre-check. A marker written any other way "
+                   "is unsigned and rejected. Never create, edit, or delete markers. If an id has no approval, tell Austin and stop.")
+
     def before_tool(self, tool_name: str, args: dict) -> Optional[str]:
+        if tool_name in ("write_file", "patch"):
+            return self.MARKER_RULE if self.APPROVALS_PATH_RE.search(str(args.get("path") or "")) else None
         if tool_name != "terminal":
             return None
         cmd = str(args.get("command") or "")
+        if "auto_approve.py" in cmd:
+            return self.MARKER_RULE
+        if self.APPROVALS_PATH_RE.search(cmd) and self.TERMINAL_WRITE_RE.search(cmd):
+            return self.MARKER_RULE
         if "submit.py" not in cmd or not re.search(r"(^|\s)--submit(\s|$)", cmd):
             return None
         m = re.search(r"--id\s+(q\d+)\b", cmd)
         if not m:
             return "[guard] Blocked: a real submission needs `--id q<N>` naming an approved queue row."
-        qid = m.group(1)
-        marker = self.approved(qid)
-        if not marker:
-            return (f"[guard] Blocked: no approval on file for {qid}. Austin has not replied `apply {qid}` in this chat. "
-                    "Ask for approval; do not retry with a different id.")
+        marker, problem = self.marker_status(m.group(1))
+        if marker is None:
+            return f"[guard] Blocked: {problem} Ask for approval; do not retry with a different id and do not write markers yourself."
         return None
 
     # ── after a real submission: log the row in Notion (host side) ───────────
@@ -237,12 +296,34 @@ class InternshipsRules(LaneRules):
         return out
 
     def secret(self, name: str) -> str:
-        """Read a secret through Hermes's scope when available, else from $HERMES_HOME/.env. Overridable in tests."""
+        """Read a secret through Hermes's scope when available, else from $HERMES_HOME/.env (host side only). Overridable in tests."""
         try:
             from agent.secret_scope import get_secret
-            return get_secret(name, "") or ""
+            val = get_secret(name, "") or ""
+            if val:
+                return val
         except Exception:
-            return ""
+            pass
+        try:
+            try:
+                from hermes_constants import get_hermes_home
+                home = Path(get_hermes_home())
+            except Exception:
+                import os
+                home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+            env = home / ".env"
+            if not env.exists():
+                return ""
+            for line in env.read_text(encoding="utf-8", errors="replace").splitlines():
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                if k.strip() == name:
+                    return v.strip().strip('"').strip("'")
+        except OSError:
+            pass
+        return ""
 
     # ── flag unverified claims in drafts ─────────────────────────────────────
     def after_tool(self, tool_name: str, args: dict, result: str) -> Optional[str]:
