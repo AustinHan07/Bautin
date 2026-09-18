@@ -7,7 +7,7 @@ metadata:
     tags: [template]
   bautin:
     lane: example
-    date: 2026-09-18
+    date: "2026-09-18"
     source: hand-written
     type: skill
 ---
