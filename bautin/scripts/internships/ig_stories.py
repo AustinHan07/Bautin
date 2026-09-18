@@ -76,14 +76,19 @@ def run(user: str, state: Path, vault: Path, max_stories: int) -> dict:
                 return {"error": "session expired", "url": page.url}
             btn = page.get_by_role("button", name=re.compile(r"view story", re.I))
             if btn.count():
-                btn.first.click(); page.wait_for_timeout(2000)
-            if not story_id(page.url):
+                btn.first.click()
+                try:
+                    page.wait_for_url(re.compile(r"/stories/[^/]+/\d+"), timeout=10000)
+                except Exception:
+                    page.wait_for_timeout(2500)
+            in_viewer = bool(story_id(page.url)) or page.locator("[role=button]:has-text('Next'), [aria-label='Next']").count() > 0
+            if not in_viewer:
                 # no active stories: Instagram bounces to the profile
-                return {"new": [], "total_seen": len(seen), "note": "no active stories"}
+                return {"new": [], "total_seen": len(seen), "note": "no active stories", "url": page.url}
             last = ""
-            for _ in range(max_stories):
-                sid = story_id(page.url)
-                if not sid or sid == last:
+            for idx in range(max_stories):
+                sid = story_id(page.url) or f"{user}-{today}-{idx}"
+                if sid == last:
                     break
                 last = sid
                 page.wait_for_timeout(1200)
@@ -96,9 +101,13 @@ def run(user: str, state: Path, vault: Path, max_stories: int) -> dict:
                     rel = str(frame.relative_to(vault))
                     seen[sid] = {"date": today, "frame": rel, "links": links, "user": user}
                     new.append({"id": sid, "frame": rel, "links": links})
-                page.keyboard.press("ArrowRight")
-                page.wait_for_timeout(900)
-                if not story_id(page.url):
+                nxt = page.locator("[aria-label='Next'], [role=button]:has-text('Next')").first
+                if nxt.count():
+                    nxt.click()
+                else:
+                    page.keyboard.press("ArrowRight")
+                page.wait_for_timeout(1200)
+                if not re.search(r"/stories/", page.url):
                     break
         finally:
             browser.close()
