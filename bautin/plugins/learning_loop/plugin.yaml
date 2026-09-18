@@ -1,0 +1,5 @@
+name: learning_loop
+version: 0.1.0
+description: "Bautin learning-loop tilt: appends a 'when in doubt, save nothing' rule to Hermes's background memory/skill review prompts (class-attribute override, no core patch). Destinations stay Hermes's pending/ gate."
+author: AustinHan07
+provides_hooks: [on_session_start]

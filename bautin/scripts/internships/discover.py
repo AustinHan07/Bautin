@@ -24,7 +24,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md"
@@ -330,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--vault", help="vault root (default: $BAUTIN_VAULT or /vault)")
     ap.add_argument("--source", choices=["simplify", "boards", "all"], default="all")
-    ap.add_argument("--monitor", action="store_true", help="print JSON {wakeAgent,...} for hermes cron --monitor-script")
+    ap.add_argument("--monitor", action="store_true", help="cron pre-check mode: last stdout line is {\"wakeAgent\": bool, ...}")
     ap.add_argument("--dry-run", action="store_true", help="fetch and filter, write nothing")
     ap.add_argument("--bootstrap", action="store_true", help="mark everything currently listed as seen without queuing")
     ap.add_argument("--list-unknown", action="store_true", help="print unknown-tier companies with fitting roles that were held back")
@@ -396,8 +396,13 @@ def main(argv: list[str] | None = None) -> int:
 
     summary = f"{len(rows)} listed, {len(fresh)} new queued, {skipped} skipped" + (f", errors: {'; '.join(errors)}" if errors else "")
     if args.monitor:
-        print(json.dumps({"wakeAgent": bool(fresh), "new": len(fresh), "summary": summary,
-                          "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}))
+        if fresh:
+            ctx = {"new": len(fresh), "summary": summary,
+                   "rows": [{"id": r.get("id", ""), "company": r["company"], "role": r["role"], "location": r["location"],
+                             "url": r["url"], "tier": r.get("tier", "")} for r in fresh[:40]]}
+            print(json.dumps({"wakeAgent": True, "context": ctx}))
+        else:
+            print(json.dumps({"wakeAgent": False}))   # byte-identical on quiet days; the agent never runs
     else:
         print(summary)
         for r in fresh[:50]:
