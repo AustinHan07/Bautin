@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Bautin pre-commit: refuse any commit that contains a secret.
+# Install once per clone:  bash bautin/scripts/install-hooks.sh
+set -euo pipefail
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks not installed (brew install gitleaks). Refusing to commit without a secret scan." >&2
+  exit 1
+fi
+gitleaks git --staged --no-banner --redact --exit-code 1
