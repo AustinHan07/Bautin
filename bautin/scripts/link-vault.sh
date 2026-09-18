@@ -49,7 +49,9 @@ cat > "$PH/scripts/discover-precheck.py" <<PYW
 import os, subprocess, sys
 os.environ.setdefault("HERMES_HOME", "$PH")
 subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/notion_sync.py", "--vault", "$VAULT", "--pull"], stdout=sys.stderr)  # best effort
-sys.exit(subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/discover.py", "--vault", "$VAULT", "--monitor"]))
+rc = subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/discover.py", "--vault", "$VAULT", "--monitor"])
+subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/auto_approve.py", "--vault", "$VAULT"], stdout=sys.stderr)  # markers only if auto_apply: true
+sys.exit(rc)
 PYW
 hermes -p "$PROFILE" config set bautin.vault "$VAULT" --force >/dev/null
 hermes -p "$PROFILE" config set memory.provider vault >/dev/null
