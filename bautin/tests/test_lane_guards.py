@@ -58,6 +58,17 @@ class GuardTests(unittest.TestCase):
         note = self.r.on_message("apply all", "1")
         self.assertIn("q1 Robinhood", note); self.assertIn("q3 Visa", note); self.assertNotIn("q2 Duolingo", note)
 
+    def test_skip_removes_rows_and_markers(self):
+        self.r.notion_skip = lambda ids: "ok"
+        self.r.on_message("apply q2", "1")
+        note = self.r.on_message("skip q2, q9", "1")
+        self.assertIn("Skipped and removed from the queue: q2", note); self.assertIn("Not in the queue: q9", note)
+        q = (self.v / "state" / "internships" / "queue.md").read_text()
+        self.assertNotIn("| q2 |", q); self.assertIn("| q1 |", q); self.assertIn("| q3 |", q)
+        self.assertFalse((self.v / "state" / "internships" / "approvals" / "q2.json").exists())
+        self.assertIn("skip:q2,q9", (self.v / "log" / "internships" / "approvals.log").read_text())
+        self.assertIsNone(self.r.on_message("please skip the boring ones", "1"))
+
     def test_submit_blocked_without_marker(self):
         cmd = {"command": "python3 /bautin/scripts/internships/submit.py --id q1 --submit"}
         self.assertIn("no approval on file for q1", self.r.before_tool("terminal", cmd))

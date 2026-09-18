@@ -41,6 +41,7 @@ class LaneRules:
 class InternshipsRules(LaneRules):
     lane = "internships"
     APPLY_RE = re.compile(r"^\s*apply\b[:\s]*(.*)$", re.I | re.S)
+    SKIP_RE = re.compile(r"^\s*(?:skip|discard|drop)\b[:\s]*(.*)$", re.I | re.S)
     CLAIM_PATTERNS = [
         (r"\b(19|20)\d{2}\b", "year"),
         (r"\b\d\.\d{1,2}\b", "number"),
@@ -102,6 +103,9 @@ class InternshipsRules(LaneRules):
         return ids, False
 
     def on_message(self, text: str, user_id: str) -> Optional[str]:
+        sm = self.SKIP_RE.match(text or "")
+        if sm:
+            return self.skip_ids(sm.group(1), user_id, text)
         m = self.APPLY_RE.match(text or "")
         if not m:
             return None
@@ -133,6 +137,51 @@ class InternshipsRules(LaneRules):
         if unknown:
             parts.append("[guard] No queue row for: " + ", ".join(unknown) + ". Not approved.")
         return "\n".join(parts)
+
+    def skip_ids(self, spec: str, user_id: str, text: str) -> Optional[str]:
+        ids, _ = self.parse_ids(spec)
+        if not ids:
+            return "[guard] No queue ids found. Say e.g. `skip q4, q41`."
+        f = self.state / "queue.md"
+        lines = f.read_text(encoding="utf-8", errors="replace").splitlines() if f.exists() else []
+        kept, removed = [], []
+        for line in lines:
+            c = [x.strip() for x in line.strip().strip("|").split("|")]
+            if len(c) >= 6 and c[0] in ids:
+                removed.append(c[0]); continue
+            kept.append(line)
+        if removed:
+            f.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            marker_dir = self.approvals
+            for qid in removed:
+                mk = marker_dir / f"{qid}.json"
+                if mk.exists():
+                    mk.unlink()
+            self.notion_skip(removed)
+        log = self.vault / "log" / "internships"; log.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with (log / "approvals.log").open("a", encoding="utf-8") as fh:
+            fh.write(f"{now}\t{user_id}\tskip:{','.join(sorted(ids))}\t{text.strip()[:200]}\n")
+        unknown = sorted(ids - set(removed), key=lambda s: int(s[1:]))
+        parts = []
+        if removed:
+            parts.append("[guard] Skipped and removed from the queue: " + ", ".join(sorted(removed, key=lambda s: int(s[1:]))) + " (marked Skipped in Notion).")
+        if unknown:
+            parts.append("[guard] Not in the queue: " + ", ".join(unknown) + ".")
+        return "\n".join(parts)
+
+    def notion_skip(self, ids: list[str]) -> Optional[str]:
+        import os, subprocess, sys
+        script = Path(__file__).resolve().parents[2] / "scripts" / "internships" / "notion_sync.py"
+        env = dict(os.environ)
+        tok = self.secret("NOTION_TOKEN")
+        if tok:
+            env["NOTION_TOKEN"] = tok
+        try:
+            return subprocess.run([sys.executable, str(script), "--vault", str(self.vault), "--skip", *ids],
+                                  capture_output=True, text=True, timeout=90, env=env, check=False).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            return json.dumps({"error": str(exc)[:200]})
 
     # ── block unapproved submissions ─────────────────────────────────────────
     def before_tool(self, tool_name: str, args: dict) -> Optional[str]:

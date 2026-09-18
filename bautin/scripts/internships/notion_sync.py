@@ -363,6 +363,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     g.add_argument("--pull", action="store_true")
     g.add_argument("--push", metavar="RESULT_JSON")
     g.add_argument("--push-queued", action="store_true")
+    g.add_argument("--skip", nargs="+", metavar="QID", help="mark these queue ids Skipped in Notion (note: skipped by Austin)")
     args = ap.parse_args(argv)
     root = vault_root(args.vault)
     cfg = load_cfg(root)
@@ -372,6 +373,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(json.dumps({"pulled": out["count"], "by_status": out["by_status"]}))
         elif args.push:
             print(json.dumps(push_result(root, cfg, Path(args.push))))
+        elif args.skip:
+            out = []
+            for qid in args.skip:
+                row = queue_row(root, qid) or {}
+                if not row:
+                    out.append({"id": qid, "error": "not in queue"}); continue
+                row["posted"] = row.get("found")
+                r = upsert(cfg, row, "Skipped", None, f"Skipped {date.today().isoformat()} per Austin; do not re-queue", tok)
+                out.append({"id": qid, **r})
+            print(json.dumps(out))
         else:
             print(json.dumps(push_queued(root, cfg)))
     except RuntimeError as e:
