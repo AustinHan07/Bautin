@@ -1,0 +1,5 @@
+name: vault
+version: 0.1.0
+description: "Bautin vault memory: one dated, sourced fact per markdown file in a git-synced vault, lane-scoped, searched with ripgrep. No automatic injection; the model calls vault_memory_search."
+author: AustinHan07
+provides_tools: [vault_memory_search, vault_memory_save]
