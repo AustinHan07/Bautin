@@ -83,6 +83,17 @@ class GuardTests(unittest.TestCase):
         out = self.r.after_tool("patch", {"path": "/vault/state/internships/drafts/q2.md"}, "patched")
         self.assertIn("Stanford", out)
 
+    def test_post_submit_pushes_to_notion(self):
+        d = self.v / "state" / "internships" / "drafts"; d.mkdir()
+        (d / "q1-result.json").write_text(json.dumps({"status": "submitted", "id": "q1"}))
+        calls = []
+        self.r.push_notion = lambda p: calls.append(p) or "pushed"
+        self.assertIsNone(self.r.on_tool_done("terminal", {"command": "python3 submit.py --id q1"}, ""))          # dry run: no push
+        self.assertEqual(self.r.on_tool_done("terminal", {"command": "python3 submit.py --id q1 --submit"}, ""), "pushed")
+        self.assertEqual(calls[0].name, "q1-result.json")
+        (d / "q1-result.json").write_text(json.dumps({"status": "incomplete", "id": "q1"}))
+        self.assertIsNone(self.r.on_tool_done("terminal", {"command": "python3 submit.py --id q1 --submit"}, ""))
+
     def test_host_path_translation(self):
         self.assertEqual(rules.host_path(Path("/h/v"), "/vault/state/x.md"), Path("/h/v/state/x.md"))
         self.assertEqual(rules.host_path(Path("/h/v"), "/tmp/x"), Path("/tmp/x"))

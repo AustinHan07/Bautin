@@ -112,6 +112,15 @@ class DiscoverTests(unittest.TestCase):
         self.assertEqual(fresh, [])
         self.assertEqual(len(seen), 6)
 
+    def test_rows_done_in_notion_are_not_queued(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "state" / "internships").mkdir(parents=True)
+            (root / "state" / "internships" / "notion-applied.json").write_text(json.dumps({"rows": [
+                {"url_key": "https://tesla.com/careers/job/1", "key": "tesla internship software engineering summer 2027", "status": "Applied"}]}))
+            fresh, skipped = discover.select_new(self.rows, self.cfg, {}, "2026-09-18", root)
+            self.assertEqual(fresh, [])
+            self.assertEqual(skipped, 6)
+
     def test_frontmatter_parser(self):
         fm = discover.parse_frontmatter("---\nlane: x\nus_only: false\nmax_age_days: 7\ninclude_roles: [a, b]\nexclude_roles:\n  - c\n  - d\n---\nbody")
         self.assertEqual(fm, {"lane": "x", "us_only": False, "max_age_days": 7, "include_roles": ["a", "b"], "exclude_roles": ["c", "d"]})

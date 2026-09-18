@@ -26,6 +26,7 @@ import urllib.parse
 import urllib.request
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 SIMPLIFY_URL = "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md"
 UA = "bautin-discover/1.0 (+https://github.com/AustinHan07/Bautin)"
@@ -299,23 +300,46 @@ def fetch_board(company: str, family: str, slug: str) -> list[dict]:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-def select_new(rows: list[dict], cfg: dict, seen: dict, today: str) -> tuple[list[dict], int]:
+def notion_done(root: Optional[Path]) -> tuple[set[str], set[str]]:
+    """URL keys and company+role keys of tracker rows whose status means never apply again (from notion-applied.json)."""
+    if root is None:
+        return set(), set()
+    f = root / "state" / "internships" / "notion-applied.json"
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set(), set()
+    done = {"Applied", "Applying", "OA", "Interview", "Offer", "Rejected", "Skipped"}
+    urls = {r["url_key"] for r in data.get("rows", []) if r.get("status") in done and r.get("url_key")}
+    keys = {r["key"] for r in data.get("rows", []) if r.get("status") in done and r.get("key")}
+    return urls, keys
+
+
+def _url_key(u: str) -> str:
+    p = urllib.parse.urlsplit((u or "").strip().lower())
+    q = [(k, v) for k, v in urllib.parse.parse_qsl(p.query, keep_blank_values=True) if not k.startswith("utm_") and k != "ref"]
+    return urllib.parse.urlunsplit((p.scheme, p.netloc.replace("www.", ""), p.path.rstrip("/"), urllib.parse.urlencode(q), ""))
+
+
+def select_new(rows: list[dict], cfg: dict, seen: dict, today: str, root: Optional[Path] = None) -> tuple[list[dict], int]:
     """Return (new rows to queue, count marked seen-but-skipped)."""
     fresh, skipped = [], 0
     excl = {c.lower() for c in cfg.get("exclude_companies", [])}
+    done_urls, done_keys = notion_done(root)
     for r in rows:
         k = key_for(r["company"], r["role"], r["location"])
         if k in seen:
             continue
         r["tier"] = company_tier(r["company"], r["faang"], cfg)
         tier_ok = r["tier"] != "unknown" or cfg.get("queue_unknown_tier", False)
+        in_notion = _url_key(r["url"]) in done_urls or re.sub(r"[^a-z0-9]+", " ", f"{r['company']} {r['role']}".lower()).strip() in done_keys
         ok = (not r["closed"] and r["url"] and role_ok(r["role"], cfg) and location_ok(r["location"], cfg)
               and r["company"].lower() not in excl and not (cfg.get("skip_advanced_degree", True) and r["adv_degree"])
               and r["age_days"] <= int(cfg.get("max_age_days", 14)))
         seen[k] = {"first_seen": today, "company": r["company"], "role": r["role"], "url": r["url"],
-                   "location": r["location"], "queued": bool(ok and tier_ok), "tier": r["tier"],
-                   "source": r["source"], "fit": bool(ok)}
-        if ok and not tier_ok:
+                   "location": r["location"], "queued": bool(ok and tier_ok and not in_notion), "tier": r["tier"],
+                   "source": r["source"], "fit": bool(ok), "in_notion": in_notion}
+        if ok and (not tier_ok or in_notion):
             skipped += 1
             continue
         if ok:
@@ -387,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
                              "queued": False, "source": r["source"], "bootstrap": True})
         fresh, skipped = [], len(rows)
     else:
-        fresh, skipped = select_new(rows, cfg, seen, today)
+        fresh, skipped = select_new(rows, cfg, seen, today, root)
 
     if not args.dry_run:
         if fresh:

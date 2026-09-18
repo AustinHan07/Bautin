@@ -99,7 +99,19 @@ def after_tool(tool_name: str = "", args: Optional[dict] = None, result: Any = N
         return None
 
 
+def tool_done(tool_name: str = "", args: Optional[dict] = None, result: Any = None, **kwargs: Any) -> None:
+    try:
+        r = _active_rules()
+        if r is not None:
+            note = r.on_tool_done(tool_name, args or {}, result if isinstance(result, str) else "")
+            if note:
+                logger.info("lane_guards: %s", note[:200])
+    except Exception as exc:
+        logger.warning("lane_guards tool_done failed open: %s", exc)
+
+
 def register(ctx: Any) -> None:
     ctx.register_hook("pre_gateway_dispatch", on_gateway_message)
     ctx.register_hook("pre_tool_call", before_tool)
     ctx.register_hook("transform_tool_result", after_tool)
+    ctx.register_hook("post_tool_call", tool_done)

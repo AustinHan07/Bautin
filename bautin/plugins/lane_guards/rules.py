@@ -33,6 +33,10 @@ class LaneRules:
     def after_tool(self, tool_name: str, args: dict, result: str) -> Optional[str]:
         return None
 
+    def on_tool_done(self, tool_name: str, args: dict, result: str) -> Optional[str]:
+        """Side effects after a tool ran (post_tool_call). Return a note for the log, or None."""
+        return None
+
 
 class InternshipsRules(LaneRules):
     lane = "internships"
@@ -146,6 +150,50 @@ class InternshipsRules(LaneRules):
             return (f"[guard] Blocked: no approval on file for {qid}. Austin has not replied `apply {qid}` in this chat. "
                     "Ask for approval; do not retry with a different id.")
         return None
+
+    # ── after a real submission: log the row in Notion (host side) ───────────
+    def on_tool_done(self, tool_name: str, args: dict, result: str) -> Optional[str]:
+        if tool_name != "terminal":
+            return None
+        cmd = str(args.get("command") or "")
+        m = re.search(r"--id\s+(q\d+)\b", cmd)
+        if "submit.py" not in cmd or not re.search(r"(^|\s)--submit(\s|$)", cmd) or not m:
+            return None
+        res = self.state / "drafts" / f"{m.group(1)}-result.json"
+        if not res.exists():
+            return None
+        try:
+            status = json.loads(res.read_text(encoding="utf-8")).get("status")
+        except (OSError, json.JSONDecodeError):
+            return None
+        if status not in ("submitted", "uncertain"):
+            return None
+        return self.push_notion(res)
+
+    def push_notion(self, result_path: Path) -> Optional[str]:
+        import os, subprocess, sys
+        script = Path(__file__).resolve().parents[2] / "scripts" / "internships" / "notion_sync.py"
+        env = dict(os.environ)
+        tok = self.secret("NOTION_TOKEN")
+        if tok:
+            env["NOTION_TOKEN"] = tok
+        try:
+            out = subprocess.run([sys.executable, str(script), "--vault", str(self.vault), "--push", str(result_path)],
+                                 capture_output=True, text=True, timeout=60, env=env, check=False).stdout.strip()
+        except (OSError, subprocess.SubprocessError) as exc:
+            out = json.dumps({"error": str(exc)})
+        log = self.vault / "log" / "internships"; log.mkdir(parents=True, exist_ok=True)
+        with (log / "notion.log").open("a", encoding="utf-8") as fh:
+            fh.write(f"{datetime.now(timezone.utc).isoformat(timespec='seconds')}\t{result_path.name}\t{out[:300]}\n")
+        return out
+
+    def secret(self, name: str) -> str:
+        """Read a secret through Hermes's scope when available, else from $HERMES_HOME/.env. Overridable in tests."""
+        try:
+            from agent.secret_scope import get_secret
+            return get_secret(name, "") or ""
+        except Exception:
+            return ""
 
     # ── flag unverified claims in drafts ─────────────────────────────────────
     def after_tool(self, tool_name: str, args: dict, result: str) -> Optional[str]:
