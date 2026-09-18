@@ -49,6 +49,12 @@ cat > "$PH/scripts/discover-precheck.py" <<PYW
 import os, subprocess, sys
 os.environ.setdefault("HERMES_HOME", "$PH")
 subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/notion_sync.py", "--vault", "$VAULT", "--pull"], stdout=sys.stderr)  # best effort
+subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/mail.py", "--emploive", "--since-hours", "3", "--vault", "$VAULT"], stdout=sys.stderr)  # Emploive alerts
+ig_state = "$PH/state/instagram-storage.json"
+if os.path.exists(ig_state):
+    subprocess.call(["docker", "run", "--rm", "-v", "$VAULT:/vault", "-v", "$FORK/bautin:/bautin:ro", "-v", ig_state + ":/ig/instagram-storage.json:ro",
+                     "bautin-sandbox:latest", "python3", "/bautin/scripts/internships/ig_stories.py", "--user", "zero2sudo", "--state", "/ig/instagram-storage.json"], stdout=sys.stderr, timeout=300)
+    subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/ig_extract.py", "--vault", "$VAULT"], stdout=sys.stderr)
 rc = subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/discover.py", "--vault", "$VAULT", "--monitor"])
 subprocess.call([sys.executable, "$FORK/bautin/scripts/internships/auto_approve.py", "--vault", "$VAULT"], stdout=sys.stderr)  # markers only if auto_apply: true
 sys.exit(rc)
