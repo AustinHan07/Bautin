@@ -1,0 +1,63 @@
+# Bautin per-profile config (~/.hermes/profiles/<lane>/config.yaml). Overrides only; Hermes defaults apply otherwise.
+# Machine-specific keys (bautin.vault, terminal.docker_volumes, skills.create_dir, memory.provider, plugins.enabled)
+# are written by bautin/scripts/link-vault.sh. Verified against Hermes v0.21.3 (Sep 2026).
+_config_version: 45
+model:
+  default: gpt-5.6-terra           # strong tier for the main loop
+  provider: openai-api             # direct OpenAI (note: "openai" would mean OpenRouter)
+agent:
+  max_turns: 60                    # per-turn tool-iteration cap; also bounds cron runs
+  disabled_toolsets: [browser, computer_use, image_gen, video_gen, tts, vision, video, x_search, homeassistant, connections, code_execution, kanban, delegation, cronjob]
+platform_toolsets:                 # the allowlist; there is no enabled_toolsets key
+  cli: [web, file, terminal, memory, skills, todo]
+  telegram: [web, file, terminal, memory, skills, todo]
+  cron: [web, file, terminal, memory, skills]
+terminal:
+  backend: docker
+  docker_image: bautin-sandbox:latest   # bash bautin/docker/build.sh <profile>
+  container_cpu: 1
+  container_memory: 1024
+  container_disk: 10240
+  container_persistent: true
+  timeout: 180
+  docker_forward_env: []
+web:
+  backend: firecrawl               # search + extract; FIRECRAWL_API_KEY in the profile .env
+memory:
+  memory_char_limit: 700
+  user_char_limit: 350
+  nudge_interval: 10
+  write_approval: true             # replace/remove staged under pending/ (linked to vault proposed/<lane>/)
+skills:
+  auto_load: [example-skill]       # the one skill this lane almost always uses
+  creation_nudge_interval: 10
+  write_approval: true             # agent skill writes staged for /skills approve
+compression:
+  threshold: 0.75
+  protect_last_n: 10
+  proactive_prune_tokens: 24000    # deterministic, no-LLM prune of old tool results
+  proactive_prune_min_result_chars: 4000
+prompt_caching:
+  cache_ttl: 1h
+auxiliary:                         # every side task on the cheap tier
+  compression: {provider: openai-api, model: gpt-5.6-luna}
+  title_generation: {provider: openai-api, model: gpt-5.6-luna}
+  background_review: {enabled: true, provider: openai-api, model: gpt-5.6-luna}
+  vision: {provider: openai-api, model: gpt-5.6-luna}
+  review: {provider: openai-api, model: gpt-5.6-luna}
+  memory_query_rewrite: {provider: openai-api, model: gpt-5.6-luna}
+  curator: {provider: openai-api, model: gpt-5.6-luna}
+  skills_hub: {provider: openai-api, model: gpt-5.6-luna}
+  approval: {provider: openai-api, model: gpt-5.6-luna}
+  mcp: {provider: openai-api, model: gpt-5.6-luna}
+  triage_specifier: {provider: openai-api, model: gpt-5.6-luna}
+  kanban_decomposer: {provider: openai-api, model: gpt-5.6-luna}
+  profile_describer: {provider: openai-api, model: gpt-5.6-luna}
+  goal_judge: {provider: openai-api, model: gpt-5.6-luna}
+  monitor: {provider: openai-api, model: gpt-5.6-luna}
+  moa_reference: {provider: openai-api, model: gpt-5.6-luna}
+  moa_aggregator: {provider: openai-api, model: gpt-5.6-luna}
+  tts_audio_tags: {provider: openai-api, model: gpt-5.6-luna}
+# fallback_providers:
+#   - provider: anthropic
+#     model: claude-sonnet-5
