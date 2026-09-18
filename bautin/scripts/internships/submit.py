@@ -43,7 +43,12 @@ LABEL_RULES: list[tuple[str, str]] = [
     (r"^(full\s*)?name$|^your name", "full_name"), (r"preferred (first )?name", "preferred_name"),
     (r"e-?mail", "email"), (r"phone|mobile", "phone"),
     (r"linkedin", "linkedin"), (r"github", "github"), (r"website|portfolio|personal site", "website"),
-    (r"current (company|employer)|^company$|organization", "current_company"),
+    (r"current (company|employer)|^company$|organization", "current_company"), (r"current (title|position|role)|job title", "current_title"),
+    (r"date of birth|birth ?date|\bdob\b", "birth_date"), (r"zip|postal", "zip"), (r"street|address line|mailing address|home address", "street_address"),
+    (r"salary|compensation|hourly|pay rate|wage|expected pay", "salary"),
+    (r"preferred (office|location)|office (preference|location)|location preference|which (office|location)", "preferred_locations"),
+    (r"time ?zone", "timezone"), (r"accommodat", "accommodation"), (r"assessment|coding (test|challenge)|online test", "assessment"),
+    (r"export control|u\.?s\.? person", "us_person"), (r"referr(al|ed by)|employee referral", "referral"),
     (r"location|city|where (are you|do you) (based|live)|address", "location"),
     (r"school|university|college", "school"), (r"degree", "degree"), (r"major|discipline|field of study", "discipline"),
     (r"(graduation|end).*(month)", "grad_month"), (r"(graduation|end).*(year)|graduat", "grad_year"),
@@ -59,8 +64,9 @@ LABEL_RULES: list[tuple[str, str]] = [
     (r"relocat", "willing_to_relocate"), (r"citizen", "us_citizen"),
     (r"resume|cv\b", "resume"), (r"cover letter", "cover_letter"),
 ]
-YES_KEYS = {"work_authorization", "over_18", "consent_background", "willing_to_relocate", "us_citizen"}
-NO_KEYS = {"sponsorship", "relatives_employed", "previously_applied", "clearance", "noncompete"}
+YES_KEYS = {"work_authorization", "over_18", "consent_background", "willing_to_relocate", "us_citizen", "assessment", "us_person"}
+NO_KEYS = {"sponsorship", "relatives_employed", "previously_applied", "clearance", "noncompete", "accommodation"}
+BLANK_UNLESS_REQUIRED = {"salary": "salary_if_required", "referral": None, "cover_letter": "cover_letter"}
 # Demographic questions: use the draft's stated answer; fall back to declining only when no answer is given.
 DECLINE_KEYS = {"eeo_gender", "eeo_race", "eeo_veteran", "eeo_disability", "eeo_hispanic", "eeo_orientation"}
 
@@ -237,13 +243,18 @@ def fill_form(page: Any, draft: dict, resume: Optional[Path], report: dict) -> N
                     el.check(); report["filled"].append({**entry, "value": answer})
                 continue
             answer, key = answer_for(label, draft)
+            if key in BLANK_UNLESS_REQUIRED:
+                fallback = BLANK_UNLESS_REQUIRED[key]
+                answer = (draft["fields"].get(fallback) if fallback else None) if required else None
+                if not required:
+                    report["filled"].append({**entry, "value": "(left blank on purpose)"}); continue
             if not answer:
                 (report["unfilled_required"] if required else report["unfilled_optional"]).append(entry)
                 continue
             if typ == "select":
-                ok = _fill_select(el, answer)
+                ok = any(_fill_select(el, cand.strip()) for cand in answer.split(";") if cand.strip())
             else:
-                el.fill(answer); ok = True
+                el.fill(answer.split(";")[0].strip() if key == "preferred_locations" else answer); ok = True
                 if el.get_attribute("role") == "combobox" or "react-select" in (el.get_attribute("class") or "") or (el.get_attribute("aria-autocomplete") or ""):
                     page.wait_for_timeout(600)
                     try:

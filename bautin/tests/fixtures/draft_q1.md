@@ -12,6 +12,7 @@ linkedin: https://linkedin.com/in/austinhan
 school: University of Wisconsin-Madison
 degree: Bachelor's Degree
 grad_year: 2028
+salary_if_required: 30
 ---
 ## Why do you want to work at Robinhood?
 Because the backend team ships real infrastructure and I want to build systems people rely on.

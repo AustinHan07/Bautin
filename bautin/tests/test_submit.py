@@ -54,6 +54,14 @@ class PureTests(unittest.TestCase):
         self.assertEqual(submit.answer_for("Are you a U.S. citizen?", d2), ("yes", "us_citizen"))
         self.assertEqual(submit.answer_for("Are you at least 18 years of age?", d2), ("yes", "over_18"))
         self.assertEqual(submit.answer_for("Do you have any relatives employed by Robinhood?", d2), ("no", "relatives_employed"))
+        d3 = submit.parse_draft("---\nstreet_address: 889 Francisco St\nzip: 90017\nbirth_date: 2007-08-28\nsalary_if_required: 30\npreferred_locations: Menlo Park; San Francisco; New York\n---\n")
+        self.assertEqual(submit.answer_for("Street Address", d3), ("889 Francisco St", "street_address"))
+        self.assertEqual(submit.answer_for("Zip / Postal Code", d3), ("90017", "zip"))
+        self.assertEqual(submit.answer_for("Date of Birth", d3), ("2007-08-28", "birth_date"))
+        self.assertEqual(submit.answer_for("Desired salary", d3), (None, "salary"))            # blank unless required
+        self.assertEqual(submit.answer_for("Preferred office location", d3)[1], "preferred_locations")
+        self.assertEqual(submit.answer_for("Are you willing to complete an online assessment?", d3), ("yes", "assessment"))
+        self.assertEqual(submit.answer_for("Do you require any accommodations for the interview?", d3), ("no", "accommodation"))
         self.assertEqual(submit.answer_for("Why do you want to work at Robinhood? *", d)[1], "custom")
         self.assertIn("agent that reads job boards", submit.answer_for("Tell us about a project you're proud of", d)[0])
         self.assertEqual(submit.answer_for("What is your favorite dessert?", d), (None, ""))
@@ -83,6 +91,9 @@ class BrowserTests(unittest.TestCase):
                          "Why do you want to work at Robinhood? *", "Gender"):
                 self.assertIn(want, labels, r)
             self.assertEqual([u["label"] for u in r["unfilled_required"]], ["What is your favorite dessert? *"])
+            filled = {f["label"]: f["value"] for f in r["filled"]}
+            self.assertEqual(filled["Desired hourly rate *"], "30")                    # required -> salary_if_required
+            self.assertEqual(filled["Referral name (optional)"], "(left blank on purpose)")
             self.assertTrue((v / r["screenshot"]).exists())
             self.assertFalse(r["captcha"])
             # submit path: blocked without marker (checked before the browser opens), then refuses on unfilled required
