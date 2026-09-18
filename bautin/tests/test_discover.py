@@ -121,6 +121,19 @@ class DiscoverTests(unittest.TestCase):
             self.assertEqual(fresh, [])
             self.assertEqual(skipped, 6)
 
+    def test_extra_sources_flow_through_filters(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); (root / "state" / "internships" / "sources").mkdir(parents=True)
+            (root / "state" / "internships" / "sources" / "emploive.json").write_text(json.dumps({"rows": [
+                {"company": "Stripe", "role": "Software Engineer Intern", "location": "SF", "url": "https://stripe.com/jobs/1?utm_source=x", "source": "emploive"},
+                {"company": "Stripe", "role": "Data Scientist Intern", "location": "SF", "url": "https://stripe.com/jobs/2", "source": "emploive"},
+                {"company": "Nobody Inc", "role": "Software Engineer Intern", "location": "NYC", "url": "https://nobody.com/1", "source": "emploive"}]}))
+            rows = discover.load_extra_sources(root)
+            self.assertEqual(len(rows), 3); self.assertEqual(rows[0]["url"], "https://stripe.com/jobs/1"); self.assertEqual(rows[0]["source"], "emploive")
+            cfg = dict(self.cfg, known_companies=["Stripe"])
+            fresh, _ = discover.select_new(rows, cfg, {}, "2026-09-18", root)
+            self.assertEqual([(r["company"], r["role"]) for r in fresh], [("Stripe", "Software Engineer Intern")])
+
     def test_frontmatter_parser(self):
         fm = discover.parse_frontmatter("---\nlane: x\nus_only: false\nmax_age_days: 7\ninclude_roles: [a, b]\nexclude_roles:\n  - c\n  - d\n---\nbody")
         self.assertEqual(fm, {"lane": "x", "us_only": False, "max_age_days": 7, "include_roles": ["a", "b"], "exclude_roles": ["c", "d"]})

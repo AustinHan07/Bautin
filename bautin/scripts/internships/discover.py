@@ -298,6 +298,26 @@ def fetch_board(company: str, family: str, slug: str) -> list[dict]:
     return [r for r in rows if "intern" in r["role"].lower()]
 
 
+# ── extra sources: state/internships/sources/*.json written by mail.py (emploive) and ig_extract.py (zero2sudo) ──
+
+def load_extra_sources(root: Path) -> list[dict]:
+    rows: list[dict] = []
+    d = root / "state" / "internships" / "sources"
+    for f in sorted(d.glob("*.json")) if d.is_dir() else []:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        for r in data.get("rows", []):
+            if not r.get("url") or not r.get("role"):
+                continue
+            rows.append({"company": r.get("company", ""), "role": r["role"], "location": r.get("location", ""), "url": clean_url(r["url"]),
+                         "age_days": int(r.get("age_days", 0) or 0), "section": f"source:{f.stem}", "closed": bool(r.get("closed")),
+                         "no_sponsor": bool(r.get("no_sponsor")), "citizenship": bool(r.get("citizenship")), "adv_degree": bool(r.get("adv_degree")),
+                         "faang": bool(r.get("faang")), "source": r.get("source") or f.stem})
+    return rows
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def notion_done(root: Optional[Path]) -> tuple[set[str], set[str]]:
@@ -353,7 +373,7 @@ def select_new(rows: list[dict], cfg: dict, seen: dict, today: str, root: Option
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--vault", help="vault root (default: $BAUTIN_VAULT or /vault)")
-    ap.add_argument("--source", choices=["simplify", "boards", "all"], default="all")
+    ap.add_argument("--source", choices=["simplify", "boards", "extra", "all"], default="all")
     ap.add_argument("--monitor", action="store_true", help="cron pre-check mode: last stdout line is {\"wakeAgent\": bool, ...}")
     ap.add_argument("--dry-run", action="store_true", help="fetch and filter, write nothing")
     ap.add_argument("--bootstrap", action="store_true", help="mark everything currently listed as seen without queuing")
@@ -397,6 +417,8 @@ def main(argv: list[str] | None = None) -> int:
             rows += parse_simplify(fetch(SIMPLIFY_URL), cfg)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             errors.append(f"simplify: {e}")
+    if args.source in ("extra", "all"):
+        rows += load_extra_sources(root)
     if args.source in ("boards", "all"):
         for company, family, slug in load_boards(root):
             try:
