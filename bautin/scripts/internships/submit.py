@@ -50,12 +50,19 @@ LABEL_RULES: list[tuple[str, str]] = [
     (r"start date|available to start|availability", "start_date"),
     (r"sponsor", "sponsorship"), (r"authori[sz]ed|work authorization|legally", "work_authorization"),
     (r"how did you hear|referr|source", "how_heard"), (r"pronoun", "pronouns"),
+    (r"hispanic|latin", "eeo_hispanic"), (r"sexual orientation|orientation", "eeo_orientation"),
     (r"gender|sex\b", "eeo_gender"), (r"race|ethnic", "eeo_race"), (r"veteran", "eeo_veteran"), (r"disabilit", "eeo_disability"),
+    (r"18 years|age of 18|at least 18|over 18", "over_18"), (r"relative|family member.*(employ|work)", "relatives_employed"),
+    (r"previously (worked|employed|applied)|former employee|worked (here|for us)", "previously_applied"),
+    (r"security clearance|clearance", "clearance"), (r"non-?compete|restrictive covenant", "noncompete"),
+    (r"background check|drug (screen|test)", "consent_background"), (r"(text|sms) messag", "consent_sms"),
+    (r"relocat", "willing_to_relocate"), (r"citizen", "us_citizen"),
     (r"resume|cv\b", "resume"), (r"cover letter", "cover_letter"),
 ]
-YES_KEYS = {"work_authorization"}
-NO_KEYS = {"sponsorship"}
-DECLINE_KEYS = {"eeo_gender", "eeo_race", "eeo_veteran", "eeo_disability"}
+YES_KEYS = {"work_authorization", "over_18", "consent_background", "willing_to_relocate", "us_citizen"}
+NO_KEYS = {"sponsorship", "relatives_employed", "previously_applied", "clearance", "noncompete"}
+# Demographic questions: use the draft's stated answer; fall back to declining only when no answer is given.
+DECLINE_KEYS = {"eeo_gender", "eeo_race", "eeo_veteran", "eeo_disability", "eeo_hispanic", "eeo_orientation"}
 
 
 # ── vault io ─────────────────────────────────────────────────────────────────
@@ -140,7 +147,7 @@ def answer_for(label: str, draft: dict) -> tuple[Optional[str], str]:
             if key in NO_KEYS:
                 return f.get(key, "no"), key
             if key in DECLINE_KEYS:
-                return f.get(key, "decline"), key
+                return f.get(key) or "decline", key
             return f.get(key), key
     return None, ""
 
@@ -186,8 +193,12 @@ def _fill_select(el: Any, answer: str) -> bool:
             pick = value; break
     if pick is None:
         for value, text in options:
-            if want and (want in text.lower()) or (want in ("decline",) and DECLINE_RE.search(text)) \
-               or (want in ("yes", "no") and text.lower().startswith(want)):
+            t = text.lower()
+            if (want and want in t) or (want == "decline" and DECLINE_RE.search(text)) \
+               or (want in ("yes", "no") and t.startswith(want)) \
+               or (want.startswith("not a") and ("not a" in t or t.startswith("i am not") or t.startswith("no,"))) \
+               or (want == "male" and t in ("male", "man")) or (want == "female" and t in ("female", "woman")) \
+               or (want in ("heterosexual", "straight") and ("heterosexual" in t or "straight" in t)):
                 pick = value; break
     if pick is None:
         return False
