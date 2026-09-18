@@ -25,9 +25,10 @@ Subject: 3 new Software Engineer internships
 Date: Thu, 18 Sep 2026 20:00:00 +0000
 Content-Type: text/html; charset=utf-8
 
-<html><body><table><tr><td><b>Stripe</b><br>San Francisco, CA<br><a href="https://emploive.com/apply/123?x=1">Software Engineer Intern</a></td></tr>
-<tr><td><b>Datadog</b><br>New York, NY<br><a href="https://careers.datadoghq.com/detail/abc">Software Engineering Intern - Summer 2027</a></td></tr>
-<tr><td><a href="https://emploive.com/home">See all jobs</a> <a href="https://emploive.com/unsubscribe?u=1">Unsubscribe</a></td></tr></table></body></html>
+<html><head><style>.x{font-family:'Courier New',monospace}</style></head><body><p>2 new jobs</p>
+<p><a href="http://url4016.emploive.com/ls/click?upn=AAA">Software Engineering Intern (Winter 2027) &#8599;</a></p><p>Gemini · New York City, New York, United States</p>
+<p><a href="http://url4016.emploive.com/ls/click?upn=BBB">Software Engineering Intern ↗</a></p><p>Fable Security · San Francisco, California, United States</p>
+<p><a href="http://url4016.emploive.com/ls/click?upn=CCC">Open trackers</a> <a href="http://url4016.emploive.com/ls/click?upn=DDD">Pause alerts</a></p></body></html>
 """
 
 
@@ -48,10 +49,15 @@ class MailTests(unittest.TestCase):
         self.assertEqual(v["code"], "483920"); self.assertTrue(v["looks_like_verification"])
 
     def test_emploive_rows(self):
-        rows = mail.parse_emploive(msg(EMPLOIVE))
-        self.assertEqual([r["company"] for r in rows], ["Stripe", "Datadog"])
-        self.assertEqual(rows[0]["role"], "Software Engineer Intern"); self.assertEqual(rows[0]["location"], "San Francisco, CA")
-        self.assertEqual(rows[1]["url"], "https://careers.datadoghq.com/detail/abc"); self.assertEqual(rows[0]["source"], "emploive")
+        rows = mail.parse_emploive(msg(EMPLOIVE), resolve=False)
+        self.assertEqual([r["company"] for r in rows], ["Gemini", "Fable Security"])
+        self.assertEqual(rows[0]["role"], "Software Engineering Intern (Winter 2027)")
+        self.assertEqual(rows[0]["location"], "New York City, New York, United States")
+        self.assertEqual(rows[1]["url"], "http://url4016.emploive.com/ls/click?upn=BBB"); self.assertEqual(rows[0]["source"], "emploive")
+
+    def test_link_resolution_uses_cache(self):
+        cache = {"http://t/x": "https://boards.greenhouse.io/embed/job_app?for=gemini&gh_jid=1"}
+        self.assertEqual(mail.resolve_link("http://t/x", cache), cache["http://t/x"])
 
     def test_password_spaces_are_ignored(self):
         import os

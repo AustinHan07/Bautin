@@ -139,25 +139,49 @@ def find_verification(m: imaplib.IMAP4_SSL, domain: str, since_min: int) -> Opti
 
 # ── Emploive alerts ──────────────────────────────────────────────────────────
 
-def parse_emploive(msg: EmailMessage) -> list[dict]:
-    """Rows from one Emploive alert: every job link with its nearby title/company text.
-    Layout is inferred generically (anchor text + preceding lines); refine once real samples exist."""
+def resolve_link(url: str, cache: Optional[dict] = None) -> str:
+    """Follow tracking redirects (Emploive/SendGrid) to the real posting URL; cached per tracking URL."""
+    if cache is not None and url in cache:
+        return cache[url]
+    final = url
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            final = r.geturl()
+    except Exception:
+        try:
+            import urllib.request
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                final = r.geturl()
+        except Exception:
+            final = url
+    if cache is not None:
+        cache[url] = final
+    return final
+
+
+def parse_emploive(msg: EmailMessage, resolve: bool = True, cache: Optional[dict] = None) -> list[dict]:
+    """Rows from one Emploive "N jobs matched your trackers" alert.
+    Layout: a role link ending in "↗", then a line "Company · City, State, Country"."""
     text, html = bodies(msg)
+    body = re.sub(r"<(style|script)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
     rows: list[dict] = []
-    if html:
-        for a in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html, re.S | re.I):
-            href, inner = unescape(a.group(1)), html_to_text(a.group(2)).strip()
-            if not inner or re.search(r"unsubscribe|preferences|emploive\.com/(profile|trackers|referrals|home)\b", href, re.I):
-                continue
-            if not re.search(r"intern", inner, re.I) and not re.search(r"emploive\.com/apply/", href, re.I):
-                continue
-            before = html_to_text(html[max(0, a.start() - 600):a.start()])
-            lines = [ln.strip() for ln in before.splitlines() if ln.strip()][-3:]
-            company = next((ln for ln in reversed(lines) if not re.search(r"intern|remote|on-site|hybrid|\bUS\b|United States|,\s*[A-Z]{2}$", ln, re.I)), "")
-            location = next((ln for ln in reversed(lines) if re.search(r"remote|on-site|hybrid|,\s*[A-Z]{2}$|United States", ln, re.I)), "")
-            rows.append({"company": company[:80], "role": inner[:120], "location": location[:80], "url": href,
-                         "age_days": 0, "source": "emploive", "faang": False, "closed": False, "no_sponsor": False,
-                         "citizenship": False, "adv_degree": False, "section": "emploive-email"})
+    for a in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', body, re.S | re.I):
+        href, inner = unescape(a.group(1)), html_to_text(a.group(2)).strip()
+        role = inner.replace("↗", "").strip()
+        if not role or re.search(r"open trackers|change how often|pause alerts|unsubscribe|^emploive\.com$|see all", inner, re.I):
+            continue
+        after = html_to_text(body[a.end():a.end() + 1500])
+        nxt = next((ln.strip() for ln in after.splitlines() if ln.strip()), "")
+        if "·" not in nxt:
+            continue
+        company, _, location = (x.strip() for x in nxt.partition("·"))
+        url = resolve_link(href, cache) if resolve else href
+        rows.append({"company": company[:80], "role": role[:120], "location": location[:100], "url": url, "tracking_url": href,
+                     "age_days": 0, "source": "emploive", "faang": False, "closed": False, "no_sponsor": False,
+                     "citizenship": False, "adv_degree": False, "section": "emploive-email", "subject": str(msg.get("Subject", ""))[:80]})
     seen = set(); out = []
     for r in rows:
         if r["url"] not in seen:
@@ -165,13 +189,23 @@ def parse_emploive(msg: EmailMessage) -> list[dict]:
     return out
 
 
-def collect_emploive(m: imaplib.IMAP4_SSL, since_hours: int) -> list[dict]:
+def collect_emploive(m: imaplib.IMAP4_SSL, since_hours: int, vault: Optional[Path] = None) -> list[dict]:
     since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    cache_file = (vault / "state" / "internships" / "sources" / "emploive-links.json") if vault else None
+    cache: dict = {}
+    if cache_file and cache_file.exists():
+        try:
+            cache = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cache = {}
     rows = []
     for uid in reversed(search_recent(m, since - timedelta(days=1), 'FROM "emploive"')[-40:]):
         msg = fetch(m, uid)
         if msg_date(msg) >= since:
-            rows += parse_emploive(msg)
+            rows += parse_emploive(msg, cache=cache)
+    if cache_file:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(cache, indent=0) + "\n", encoding="utf-8")
     return rows
 
 
@@ -199,7 +233,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             v = find_verification(m, args.domain, args.since_min)
             print(json.dumps(v or {"found": False, "domain": args.domain, "since_min": args.since_min}))
         elif args.emploive:
-            rows = collect_emploive(m, args.since_hours)
+            rows = collect_emploive(m, args.since_hours, Path(args.vault))
             f = write_source(Path(args.vault), "emploive", rows)
             print(json.dumps({"rows": len(rows), "file": str(f)}))
         else:
