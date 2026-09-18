@@ -3,6 +3,7 @@
 #   bash bautin/scripts/link-vault.sh <vault-path> <profile>
 # Links: SOUL.md, memories/, skills/<profile>/ (category), pending/ -> proposed/<profile>/
 #        plugins/vault -> bautin/plugins/vault (the vault memory provider)
+#        plugins/lane_guards -> bautin/plugins/lane_guards (deterministic guards, enabled)
 # Sets:  bautin.vault, memory.provider=vault, skills.create_dir,
 #        terminal.docker_volumes (vault at /vault, bautin/ at /bautin:ro)
 # Fails loudly if the vault, the profile, or the lane's SOUL.md is missing.
@@ -34,6 +35,8 @@ link "$VAULT/skills/$PROFILE"             "$PH/skills/$PROFILE"
 link "$VAULT/proposed/$PROFILE"           "$PH/pending"
 mkdir -p "$PH/plugins"
 link "$FORK/bautin/plugins/vault"         "$PH/plugins/vault"
+link "$FORK/bautin/plugins/lane_guards"   "$PH/plugins/lane_guards"
+hermes -p "$PROFILE" plugins enable lane_guards </dev/null >/dev/null 2>&1 || true   # non-interactive; no tool-override grant needed
 hermes -p "$PROFILE" config set bautin.vault "$VAULT" --force >/dev/null
 hermes -p "$PROFILE" config set memory.provider vault >/dev/null
 hermes -p "$PROFILE" config set skills.create_dir "$VAULT/skills/$PROFILE" >/dev/null

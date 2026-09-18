@@ -130,9 +130,10 @@ class DiscoverTests(unittest.TestCase):
         fresh, _ = discover.select_new(self.rows, cfg, seen, "2026-09-18")
         self.assertEqual({r["company"] for r in fresh}, {"Tesla"})      # faang passes; nothing else known
         rows2 = discover.parse_simplify(FIXTURE.replace("2mo", "1d"), cfg)   # OldCo now fresh but unknown tier
-        fresh, _ = discover.select_new(rows2, cfg, seen, "2026-09-18")
-        self.assertEqual(fresh, [])
-        held = [v for v in seen.values() if v["tier"] == "unknown" and v["fit"] and not v["queued"]]
+        seen2 = {}
+        fresh, _ = discover.select_new(rows2, cfg, seen2, "2026-09-18")
+        self.assertEqual({r["company"] for r in fresh}, {"Tesla"})
+        held = [v for v in seen2.values() if v["tier"] == "unknown" and v["fit"] and not v["queued"]]
         self.assertEqual([v["company"] for v in held], ["OldCo"])
 
     def test_location_rules(self):
@@ -145,12 +146,12 @@ class DiscoverTests(unittest.TestCase):
     def test_end_to_end_writes_queue_and_seen(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td); (root / "state" / "internships").mkdir(parents=True)
-            (root / "state" / "internships" / "queue.md").write_text("| found | company |\n|---|---|\n")
+            (root / "state" / "internships" / "queue.md").write_text("| id | found | company |\n|---|---|---|\n| q4 | 2026-09-01 | X |\n")
             discover.fetch = lambda url, timeout=30: FIXTURE   # no network
             rc = discover.main(["--vault", td, "--source", "simplify"])
             self.assertEqual(rc, 0)
             q = (root / "state" / "internships" / "queue.md").read_text()
-            self.assertIn("| Tesla | Internship - Software Engineering - Summer 2027 |", q)
+            self.assertIn("| q5 | 2026-09-18 | Tesla | Internship - Software Engineering - Summer 2027 |", q)
             self.assertIn("faang", q)
             seen = json.loads((root / "state" / "internships" / "seen.json").read_text())
             self.assertEqual(len(seen), 6)

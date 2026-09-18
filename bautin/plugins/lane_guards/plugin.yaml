@@ -1,0 +1,5 @@
+name: lane_guards
+version: 0.1.0
+description: "Bautin lane guards: deterministic checks between tools and the model. Records Austin's 'apply' replies as approval markers, blocks submissions without a marker, and flags draft claims missing from the facts file."
+author: AustinHan07
+provides_hooks: [pre_gateway_dispatch, pre_tool_call, transform_tool_result]

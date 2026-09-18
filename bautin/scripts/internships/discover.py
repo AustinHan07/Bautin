@@ -118,14 +118,22 @@ def save_seen(root: Path, seen: dict) -> None:
     f.write_text(json.dumps(seen, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def next_queue_id(root: Path) -> int:
+    f = root / "state" / "internships" / "queue.md"
+    ids = [int(m) for m in re.findall(r"^\|\s*q(\d+)\s*\|", f.read_text(encoding="utf-8"), re.M)] if f.exists() else []
+    return (max(ids) + 1) if ids else 1
+
+
 def append_queue(root: Path, rows: list[dict]) -> None:
     f = root / "state" / "internships" / "queue.md"
     lines = []
+    qid = next_queue_id(root)
     for r in rows:
+        r["id"] = f"q{qid}"; qid += 1
         flags = " ".join(x for x in (r.get("tier"), r.get("citizenship") and "citizenship",
                                      r.get("no_sponsor") and "no-sponsor") if x)
         loc = r["location"].replace("|", "/")
-        lines.append(f"| {r['found']} | {r['company']} | {r['role']} | {loc} | {r['url']} |  | {flags} |")
+        lines.append(f"| {r['id']} | {r['found']} | {r['company']} | {r['role']} | {loc} | {r['url']} |  | {flags} |")
     with f.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
 
@@ -189,7 +197,17 @@ def key_for(company: str, role: str, location: str) -> str:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+    toks = re.sub(r"[^a-z0-9]+", " ", s.lower()).split()
+    out: list[str] = []
+    for t in toks:                       # merge runs of single letters: "d e shaw" -> "de shaw"
+        if len(t) == 1 and out and len(out[-1]) <= 2 and out[-1].isalpha() and (len(out[-1]) == 1 or out[-1] in _MERGED):
+            out[-1] += t; _MERGED.add(out[-1])
+        else:
+            out.append(t)
+    return " ".join(out)
+
+
+_MERGED: set[str] = set()
 
 
 def company_tier(company: str, faang: bool, cfg: dict) -> str:
