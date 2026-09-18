@@ -63,10 +63,14 @@ def on_gateway_message(event: Any, **kwargs: Any) -> Optional[dict]:
         r = _active_rules()
         if r is None or getattr(event, "internal", False):
             return None
-        uid = str(getattr(event, "user_id", "") or "")
-        if uid and uid not in _allowed_user_ids():
+        # The Telegram adapter carries the sender in event.source.user_id, not event.user_id.
+        uid = str(getattr(event, "user_id", None) or getattr(getattr(event, "source", None), "user_id", None) or "")
+        text = str(getattr(event, "text", "") or "")
+        if not uid or uid not in _allowed_user_ids():
+            if uid == "" and _rules.InternshipsRules.APPLY_RE.match(text):
+                return {"action": "rewrite", "text": f"{text}\n\n[guard] Sender id missing; approval NOT recorded."}
             return None
-        note = r.on_message(str(getattr(event, "text", "") or ""), uid)
+        note = r.on_message(text, uid)
         if note:
             return {"action": "rewrite", "text": f"{event.text}\n\n{note}"}
     except Exception as exc:
