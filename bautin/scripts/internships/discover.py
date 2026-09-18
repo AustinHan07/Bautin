@@ -120,8 +120,18 @@ def save_seen(root: Path, seen: dict) -> None:
 
 
 def next_queue_id(root: Path) -> int:
+    """Next unused queue id: max of the queue, the persisted counter, and the seen-list, plus one. Ids are never reused."""
     f = root / "state" / "internships" / "queue.md"
     ids = [int(m) for m in re.findall(r"^\|\s*q(\d+)\s*\|", f.read_text(encoding="utf-8"), re.M)] if f.exists() else []
+    cf = root / "state" / "internships" / "counter.json"
+    try:
+        ids.append(int(json.loads(cf.read_text(encoding="utf-8")).get("last_id", 0)))
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+    for v in load_seen(root).values():
+        m = re.fullmatch(r"q(\d+)", str(v.get("id", "")))
+        if m:
+            ids.append(int(m.group(1)))
     return (max(ids) + 1) if ids else 1
 
 
@@ -131,6 +141,8 @@ def append_queue(root: Path, rows: list[dict]) -> None:
     qid = next_queue_id(root)
     for r in rows:
         r["id"] = f"q{qid}"; qid += 1
+    (root / "state" / "internships" / "counter.json").write_text(json.dumps({"last_id": qid - 1}) + "\n", encoding="utf-8")
+    for r in rows:
         flags = " ".join(x for x in (r.get("tier"), r.get("citizenship") and "citizenship",
                                      r.get("no_sponsor") and "no-sponsor") if x)
         loc = r["location"].replace("|", "/")
@@ -362,6 +374,7 @@ def select_new(rows: list[dict], cfg: dict, seen: dict, today: str, root: Option
         if ok and (not tier_ok or in_notion):
             skipped += 1
             continue
+        r["_seen_key"] = k
         if ok:
             r["found"] = today
             fresh.append(r)
@@ -438,6 +451,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         if fresh:
             append_queue(root, fresh)
+            for r in fresh:
+                if r.get("_seen_key") in seen:
+                    seen[r["_seen_key"]]["id"] = r["id"]
         save_seen(root, seen)
 
     summary = f"{len(rows)} listed, {len(fresh)} new queued, {skipped} skipped" + (f", errors: {'; '.join(errors)}" if errors else "")

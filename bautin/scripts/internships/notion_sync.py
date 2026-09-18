@@ -368,6 +368,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = ap.parse_args(argv)
     root = vault_root(args.vault)
     cfg = load_cfg(root)
+    tok = None  # request() reads NOTION_TOKEN itself
     try:
         if args.pull:
             out = pull(root, cfg)
