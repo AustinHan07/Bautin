@@ -1,0 +1,24 @@
+<!doctype html><html><head><title>Software Engineer Intern - Backend at Robinhood</title></head><body>
+<h1>Software Engineer Intern - Backend</h1>
+<form id="application_form" onsubmit="return false">
+  <div><label for="first_name">First Name *</label><input id="first_name" name="first_name" required></div>
+  <div><label for="last_name">Last Name *</label><input id="last_name" name="last_name" required></div>
+  <div><label for="email">Email *</label><input id="email" name="email" type="email" required></div>
+  <div><label for="phone">Phone</label><input id="phone" name="phone"></div>
+  <div><label for="candidate-location">Location (City)</label><input id="candidate-location" name="location"></div>
+  <div><label for="resume">Resume/CV *</label><input id="resume" name="resume" type="file" required></div>
+  <div><label for="school--0">School *</label><select id="school--0" name="school" required><option value="">Select...</option><option value="1">Stanford University</option><option value="2">University of Wisconsin-Madison</option></select></div>
+  <div><label for="degree--0">Degree</label><select id="degree--0" name="degree"><option value="">Select...</option><option value="b">Bachelor's Degree</option><option value="m">Master's Degree</option></select></div>
+  <div><label for="end-year--0">Graduation Year</label><input id="end-year--0" name="end-year"></div>
+  <div><label for="question_1">LinkedIn Profile</label><input id="question_1" name="question_1"></div>
+  <div><label for="question_2">Are you legally authorized to work in the United States? *</label><select id="question_2" name="question_2" required><option value="">Select...</option><option value="y">Yes</option><option value="n">No</option></select></div>
+  <div><label for="question_3">Will you now or in the future require sponsorship for employment visa status? *</label><select id="question_3" name="question_3" required><option value="">Select...</option><option value="y">Yes</option><option value="n">No</option></select></div>
+  <div><label for="question_4">Why do you want to work at Robinhood? *</label><textarea id="question_4" name="question_4" required></textarea></div>
+  <div><label for="question_5">Tell us about a project you are proud of.</label><textarea id="question_5" name="question_5"></textarea></div>
+  <div><label for="question_6">What is your favorite dessert? *</label><input id="question_6" name="question_6" required></div>
+  <div><label for="gender">Gender</label><select id="gender" name="gender"><option value="">Select...</option><option value="m">Male</option><option value="f">Female</option><option value="d">Decline To Self Identify</option></select></div>
+  <div><label><input type="checkbox" id="consent" name="consent" required> I consent to the privacy policy *</label></div>
+  <button type="button" id="submit_app" onclick="document.getElementById('done').innerText='Thank you for applying to Robinhood!'">Submit Application</button>
+  <div id="done"></div>
+</form>
+</body></html>
