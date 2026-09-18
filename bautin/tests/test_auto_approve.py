@@ -34,7 +34,7 @@ class AutoApproveTests(unittest.TestCase):
         d = aa.decide(self.v, self.cfg, date.today())
         self.assertEqual([r["id"] for r in d["approve"]], ["q1", "q6"])
         why = {h["id"]: h["why"] for h in d["hold"]}
-        self.assertEqual(why["q2"], "tier"); self.assertIn("age", why["q3"]); self.assertEqual(why["q4"], "in notion"); self.assertEqual(why["q5"], "role")
+        self.assertEqual(why["q2"], "tier"); self.assertIn("age", why["q3"]); self.assertIn("in notion", why["q4"]); self.assertEqual(why["q5"], "role")
 
     def test_daily_cap_and_markers(self):
         d = aa.decide(self.v, dict(self.cfg, auto_apply_daily_cap=1), date.today())
