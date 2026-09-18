@@ -94,6 +94,22 @@ class GuardTests(unittest.TestCase):
         (d / "q1-result.json").write_text(json.dumps({"status": "incomplete", "id": "q1"}))
         self.assertIsNone(self.r.on_tool_done("terminal", {"command": "python3 submit.py --id q1 --submit"}, ""))
 
+    def test_mail_verification_tool_shape(self):
+        spec2 = importlib.util.spec_from_file_location("lane_guards_pkg", REPO / "bautin" / "plugins" / "lane_guards" / "__init__.py",
+                                                       submodule_search_locations=[str(REPO / "bautin" / "plugins" / "lane_guards")])
+        pkg = importlib.util.module_from_spec(spec2); sys.modules["lane_guards_pkg"] = pkg; spec2.loader.exec_module(pkg)
+        self.assertEqual(pkg.MAIL_TOOL_SCHEMA["required"], ["domain"])
+        import subprocess
+        real = subprocess.run
+        class R:  # fake completed process
+            stdout = '{"link": "https://x/verify?t=1", "code": null}'
+        subprocess.run = lambda *a, **k: R()
+        try:
+            out = json.loads(pkg.mail_verification({"domain": "x.com", "since_min": 10}))
+        finally:
+            subprocess.run = real
+        self.assertEqual(out["link"], "https://x/verify?t=1")
+
     def test_host_path_translation(self):
         self.assertEqual(rules.host_path(Path("/h/v"), "/vault/state/x.md"), Path("/h/v/state/x.md"))
         self.assertEqual(rules.host_path(Path("/h/v"), "/tmp/x"), Path("/tmp/x"))

@@ -110,7 +110,37 @@ def tool_done(tool_name: str = "", args: Optional[dict] = None, result: Any = No
         logger.warning("lane_guards tool_done failed open: %s", exc)
 
 
+MAIL_TOOL_SCHEMA = {"type": "object", "properties": {
+    "domain": {"type": "string", "description": "Sender domain to look for, e.g. corteva.com or greenhouse-mail.io. Empty = any sender."},
+    "since_min": {"type": "integer", "description": "Only consider mail newer than this many minutes (default 30)."}},
+    "required": ["domain"]}
+
+
+def mail_verification(args: Optional[dict] = None, **kwargs: Any) -> str:
+    """Return the newest verification link or code from Austin's Gmail (host side; credentials never enter the sandbox)."""
+    import json as _json, os, subprocess, sys
+    args = args or {}
+    script = Path(__file__).resolve().parents[2] / "scripts" / "internships" / "mail.py"
+    env = dict(os.environ)
+    try:
+        from agent.secret_scope import get_secret
+        for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"):
+            v = get_secret(k, "")
+            if v:
+                env[k] = v
+    except Exception:
+        pass
+    cmd = [sys.executable, str(script), "--verify", "--domain", str(args.get("domain") or ""), "--since-min", str(int(args.get("since_min") or 30))]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=90, env=env, check=False).stdout.strip()
+        return out or _json.dumps({"found": False})
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _json.dumps({"error": str(exc)[:200]})
+
+
 def register(ctx: Any) -> None:
+    ctx.register_tool("mail_verification", "bautin", MAIL_TOOL_SCHEMA, mail_verification,
+                      description="Fetch the newest email-verification link or one-time code sent to Austin's Gmail by a job portal (give the sender domain).", emoji="📧")
     ctx.register_hook("pre_gateway_dispatch", on_gateway_message)
     ctx.register_hook("pre_tool_call", before_tool)
     ctx.register_hook("transform_tool_result", after_tool)
