@@ -67,6 +67,21 @@ class PureTests(unittest.TestCase):
         self.assertEqual(submit.answer_for("What is your favorite dessert?", d), (None, ""))
         self.assertEqual(submit.answer_for("School", d), ("University of Wisconsin-Madison", "school"))
 
+    def test_run_blocks_rows_already_done_in_notion(self):
+        with tempfile.TemporaryDirectory() as td:
+            url = "https://boards.greenhouse.io/robinhood/jobs/1"
+            v = make_vault(td, url)
+            sys.path.insert(0, str(ROOT / "scripts" / "internships")); import notion_sync
+            (v / "state" / "internships" / "notion-applied.json").write_text(json.dumps({"rows": [
+                {"url_key": notion_sync.norm_url(url + "?utm_source=x"), "key": "robinhood other role", "status": "Applied"},
+                {"url_key": "https://elsewhere.example/1", "key": notion_sync.norm_key("Visa", "Software Engineer Intern"), "status": "Skipped"}]}))
+            r = submit.run(v, "q1", False)
+            self.assertEqual(r["status"], "blocked"); self.assertIn("already Applied", r["message"])
+            self.assertEqual(submit.run(v, "q2", False)["status"], "blocked")           # matched by company+role, before family detection
+            (v / "state" / "internships" / "notion-applied.json").write_text(json.dumps({"rows": [
+                {"url_key": notion_sync.norm_url(url), "key": "x", "status": "Queued"}]}))
+            self.assertEqual(submit.run(v, "q2", False)["status"], "unsupported")       # Queued is not done
+
     def test_run_refuses_without_row_draft_or_approval(self):
         with tempfile.TemporaryDirectory() as td:
             v = make_vault(td, "https://boards.greenhouse.io/robinhood/jobs/1")

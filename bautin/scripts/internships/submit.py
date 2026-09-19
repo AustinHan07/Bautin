@@ -120,6 +120,21 @@ def detect_family(url: str) -> Optional[str]:
     return next((f for f, rx in FAMILIES.items() if rx.search(url or "")), None)
 
 
+def notion_done_status(root: Path, row: dict) -> Optional[str]:
+    """Status from the local Notion export when this posting is already Applied/Skipped/etc., else None.
+    Deterministic replacement for the model reading notion-applied.json (105 KB) on every apply."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        from notion_sync import DONE_DEFAULT, load_applied, norm_key, norm_url
+    except Exception:
+        return None
+    url_key, key = norm_url(row.get("url", "")), norm_key(row.get("company", ""), row.get("role", ""))
+    for r in load_applied(root).get("rows", []):
+        if r.get("status") in DONE_DEFAULT and (r.get("url_key") == url_key or (key and r.get("key") == key)):
+            return str(r["status"])
+    return None
+
+
 def approval(root: Path, qid: str) -> Optional[dict]:
     f = root / "state" / "internships" / "approvals" / f"{qid}.json"
     try:
@@ -273,6 +288,10 @@ def run(root: Path, qid: str, submit: bool, headed: bool = False, family: Option
     row = queue_row(root, qid)
     if not row:
         return {"status": "error", "id": qid, "message": f"no queue row {qid} in queue.md"}
+    done = notion_done_status(root, row)
+    if done:
+        return {"status": "blocked", "id": qid, "url": row["url"], "company": row["company"], "role": row["role"],
+                "message": f"already {done} in Austin's Notion tracker; never apply twice. Tell Austin and skip {qid}."}
     family = family or detect_family(row["url"])
     if not family:
         return {"status": "unsupported", "id": qid, "url": row["url"],

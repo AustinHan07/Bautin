@@ -75,7 +75,8 @@ def decide(root: Path, cfg: dict, today: date) -> dict:
     written_today = 0
     for p in approvals.glob("q*.json"):
         try:
-            if json.loads(p.read_text(encoding="utf-8")).get("approved_at", "").startswith(today.isoformat()):
+            # markers are stamped in UTC (write_markers); count the cap on the UTC day, not the local one
+            if json.loads(p.read_text(encoding="utf-8")).get("approved_at", "").startswith(datetime.now(timezone.utc).date().isoformat()):
                 written_today += 1
         except (OSError, json.JSONDecodeError):
             pass
