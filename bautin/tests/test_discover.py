@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -173,7 +174,8 @@ class DiscoverTests(unittest.TestCase):
             rc = discover.main(["--vault", td, "--source", "simplify"])
             self.assertEqual(rc, 0)
             q = (root / "state" / "internships" / "queue.md").read_text()
-            self.assertIn("| q5 | 2026-09-18 | Tesla | Internship - Software Engineering - Summer 2027 |", q)
+            # main() stamps `found` with the real today, so pin it to today, never to a literal date
+            self.assertIn(f"| q5 | {date.today().isoformat()} | Tesla | Internship - Software Engineering - Summer 2027 |", q)
             self.assertIn("faang", q)
             seen = json.loads((root / "state" / "internships" / "seen.json").read_text())
             self.assertEqual(len(seen), 6)
